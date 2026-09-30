@@ -63,7 +63,7 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "Detected Dusk menu toggle combo");
 
-        Session::get()->getOverlayManager().getMenu().toggle();
+        Session::get()->getOverlayManager().getMenu().toggleMenu();
 
         // The combo itself is held with three modifiers down. Without this
         // the host keeps them latched, because the key-ups are swallowed by
@@ -206,6 +206,23 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
         // Ignore repeat key down events
         SDL_assert(event->state == SDL_PRESSED);
         return;
+    }
+
+    // Opt-in key tracing. Set DUSK_KEY_DEBUG=1 to find out whether a
+    // keystroke reaches this handler at all and which modifiers SDL thinks
+    // are held -- the difference between "the combo is wrong" and "the key
+    // never arrived", which is otherwise invisible.
+    if (event->state == SDL_PRESSED && SDL_getenv("DUSK_KEY_DEBUG") != nullptr) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "DUSK_KEY: sym=0x%x (%s) scancode=%d mod=0x%x ctrl=%d alt=%d shift=%d gui=%d",
+                    event->keysym.sym,
+                    SDL_GetKeyName(event->keysym.sym),
+                    event->keysym.scancode,
+                    event->keysym.mod,
+                    !!(event->keysym.mod & KMOD_CTRL),
+                    !!(event->keysym.mod & KMOD_ALT),
+                    !!(event->keysym.mod & KMOD_SHIFT),
+                    !!(event->keysym.mod & KMOD_GUI));
     }
 
     // Check for our special key combos

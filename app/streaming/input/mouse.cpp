@@ -2,7 +2,9 @@
 
 #include <Limelight.h>
 #include "SDL_compat.h"
+#include "streaming/session.h"
 #include "streaming/streamutils.h"
+#include "streaming/video/duskoverlay.h"
 
 void SdlInputHandler::notifyMouseLeave()
 {
@@ -51,6 +53,19 @@ void SdlInputHandler::handleMouseButtonEvent(SDL_MouseButtonEvent* event)
     else if (m_AbsoluteMouseMode && !isMouseInVideoRegion(event->x, event->y) && event->state == SDL_PRESSED) {
         // Ignore button presses outside the video region, but allow button releases
         return;
+    }
+
+    // Dusk's overlay gets first refusal, so a click on the handle opens the
+    // menu instead of shooting something on the host.
+    {
+        int windowWidth, windowHeight;
+        SDL_GetWindowSize(m_Window, &windowWidth, &windowHeight);
+        Overlay::Menu& menu = Session::get()->getOverlayManager().getMenu();
+        menu.setWindowSize(windowWidth, windowHeight);
+        if (menu.handleMouseButton(event->button, event->state == SDL_PRESSED,
+                                   event->x, event->y, m_AbsoluteMouseMode)) {
+            return;
+        }
     }
 
     switch (event->button)
@@ -118,6 +133,19 @@ void SdlInputHandler::handleMouseMotionEvent(SDL_MouseMotionEvent* event)
 
     // We should not reference the original event anymore
     event = nullptr;
+
+    // Dusk's overlay gets first refusal. It only claims motion while the
+    // pointer is over the handle or the menu is open, so ordinary movement
+    // still reaches the host untouched.
+    {
+        int windowWidth, windowHeight;
+        SDL_GetWindowSize(m_Window, &windowWidth, &windowHeight);
+        Overlay::Menu& menu = Session::get()->getOverlayManager().getMenu();
+        menu.setWindowSize(windowWidth, windowHeight);
+        if (menu.handleMouseMotion(x, y, xrel, yrel, m_AbsoluteMouseMode)) {
+            return;
+        }
+    }
 
     if (m_AbsoluteMouseMode) {
         int windowWidth, windowHeight;

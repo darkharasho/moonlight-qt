@@ -2,6 +2,7 @@
 
 #include "streaming/session.h"
 #include "streaming/streamutils.h"
+#include "streaming/video/duskoverlay.h"
 
 // Implementation in plvk_c.c
 #define PL_LIBAV_IMPLEMENTATION 0
@@ -1038,11 +1039,21 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
                 overlayParts[i].dst.x0 = 0;
                 overlayParts[i].dst.y0 = 0;
             }
-            else if (i == Overlay::OverlayMenu) {
-                // Centred: it is a menu someone is looking at, not a status
-                // line they are ignoring.
-                overlayParts[i].dst.x0 = SDL_max(0.0f, (targetFrame.crop.x1 - overlayParts[i].src.x1) / 2);
-                overlayParts[i].dst.y0 = SDL_max(0.0f, (targetFrame.crop.y1 - overlayParts[i].src.y1) / 2);
+            else if (i == Overlay::OverlayHandle || i == Overlay::OverlayMenu) {
+                // Dusk's overlays move, so the position comes from the menu
+                // rather than a fixed corner.
+                int x = 0, y = 0;
+                Overlay::Menu& menu = Session::get()->getOverlayManager().getMenu();
+                int w = (int)overlayParts[i].src.x1;
+                int h = (int)overlayParts[i].src.y1;
+                if (i == Overlay::OverlayHandle) {
+                    menu.handleOrigin((int)targetFrame.crop.x1, (int)targetFrame.crop.y1, w, h, &x, &y);
+                }
+                else {
+                    menu.menuOrigin((int)targetFrame.crop.x1, (int)targetFrame.crop.y1, w, h, &x, &y);
+                }
+                overlayParts[i].dst.x0 = (float)x;
+                overlayParts[i].dst.y0 = (float)y;
             }
             overlayParts[i].dst.x1 = overlayParts[i].dst.x0 + overlayParts[i].src.x1;
             overlayParts[i].dst.y1 = overlayParts[i].dst.y0 + overlayParts[i].src.y1;

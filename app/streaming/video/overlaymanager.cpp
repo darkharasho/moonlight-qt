@@ -118,6 +118,13 @@ SDL_Color OverlayManager::getOverlayColor(OverlayType type)
 void OverlayManager::setOverlayRenderer(IOverlayRenderer* renderer)
 {
     m_Renderer = renderer;
+
+    // The handle is persistent, so it has to be drawn as soon as there is
+    // something to draw it on. Before a renderer exists there is nowhere
+    // for the surface to go.
+    if (m_Renderer != nullptr) {
+        getMenu().refresh();
+    }
 }
 
 Menu& OverlayManager::getMenu()
@@ -153,7 +160,7 @@ void OverlayManager::notifyOverlayUpdated(OverlayType type)
     // The menu draws its own pixels, so there is no text to render here.
     // Enabling it is a no-op because Menu::repaint() supplies the surface;
     // disabling it clears the surface so the renderer drops the texture.
-    if (type == OverlayMenu) {
+    if (type == OverlayMenu || type == OverlayHandle) {
         if (!m_Overlays[type].enabled) {
             SDL_Surface* oldSurface = (SDL_Surface*)SDL_AtomicSetPtr(
                 (void**)&m_Overlays[type].surface, nullptr);

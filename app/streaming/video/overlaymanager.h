@@ -10,9 +10,12 @@ namespace Overlay {
 enum OverlayType {
     OverlayDebug,
     OverlayStatusUpdate,
-    // Dusk's interactive menu. Unlike the two above it is not text: the
-    // surface is drawn by Overlay::Menu and handed over with
-    // setOverlaySurface(), so the font path is skipped entirely.
+    // Dusk's persistent handle and the menu it opens. Unlike the two above
+    // these are not text: the surfaces are drawn by Overlay::Menu and
+    // handed over with setOverlaySurface(), so the font path is skipped
+    // entirely. Their positions are dynamic, so renderers ask Menu where to
+    // put them instead of hardcoding a corner.
+    OverlayHandle,
     OverlayMenu,
     OverlayMax
 };

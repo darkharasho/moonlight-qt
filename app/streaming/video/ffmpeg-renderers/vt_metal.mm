@@ -9,6 +9,7 @@
 #include <Limelight.h>
 #include "streaming/session.h"
 #include "streaming/streamutils.h"
+#include "streaming/video/duskoverlay.h"
 #include "path.h"
 
 #import <Cocoa/Cocoa.h>
@@ -538,11 +539,21 @@ public:
                     renderRect.x = 0;
                     renderRect.y = m_LastDrawableHeight - overlayTexture.height;
                 }
-                else if (i == Overlay::OverlayMenu) {
-                    // Centred: it is a menu someone is looking at, not a
-                    // status line they are ignoring.
-                    renderRect.x = (m_LastDrawableWidth - (int)overlayTexture.width) / 2;
-                    renderRect.y = (m_LastDrawableHeight - (int)overlayTexture.height) / 2;
+                else if (i == Overlay::OverlayHandle || i == Overlay::OverlayMenu) {
+                    // Dusk's overlays move, so the position comes from the
+                    // menu rather than a fixed corner.
+                    int x = 0, y = 0;
+                    Overlay::Menu& menu = Session::get()->getOverlayManager().getMenu();
+                    int w = (int)overlayTexture.width;
+                    int h = (int)overlayTexture.height;
+                    if (i == Overlay::OverlayHandle) {
+                        menu.handleOrigin(m_LastDrawableWidth, m_LastDrawableHeight, w, h, &x, &y);
+                    }
+                    else {
+                        menu.menuOrigin(m_LastDrawableWidth, m_LastDrawableHeight, w, h, &x, &y);
+                    }
+                    renderRect.x = x;
+                    renderRect.y = y;
                 }
 
                 renderRect.w = overlayTexture.width;
