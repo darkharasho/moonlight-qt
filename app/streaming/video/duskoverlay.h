@@ -86,6 +86,11 @@ public:
     void menuOrigin(int displayWidth, int displayHeight, int surfaceWidth,
                     int surfaceHeight, int* x, int* y);
 
+    /// Where our own pointer sits. Window coordinates scaled to the
+    /// renderer's display, which differ on a HiDPI screen.
+    void cursorOrigin(int displayWidth, int displayHeight, int surfaceWidth,
+                      int surfaceHeight, int* x, int* y);
+
 private:
     struct Item {
         const char* label;
@@ -97,6 +102,9 @@ private:
 
     void repaintHandle();
     void repaintMenu();
+    void repaintCursor();
+    /// Show or hide our pointer as the overlay takes and releases the mouse.
+    void setEngaged(bool engaged);
     void activate(int index);
 
     bool openFont();
@@ -116,6 +124,7 @@ private:
     bool m_MenuOpen;
     int m_Selected;
     bool m_HandleHot;
+    bool m_Engaged;
 
     // Normalised 0..1 anchor for the handle's top-left, so it survives a
     // resolution change.

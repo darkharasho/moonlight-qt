@@ -17,6 +17,11 @@ enum OverlayType {
     // put them instead of hardcoding a corner.
     OverlayHandle,
     OverlayMenu,
+    // A pointer of our own, shown only while the overlay has the mouse.
+    // Capture hides the system cursor in both absolute and relative mode,
+    // so once the overlay stops forwarding motion to the host there is
+    // nothing on screen to aim with.
+    OverlayCursor,
     OverlayMax
 };
 

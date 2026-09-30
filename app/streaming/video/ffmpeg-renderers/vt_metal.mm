@@ -539,7 +539,8 @@ public:
                     renderRect.x = 0;
                     renderRect.y = m_LastDrawableHeight - overlayTexture.height;
                 }
-                else if (i == Overlay::OverlayHandle || i == Overlay::OverlayMenu) {
+                else if (i == Overlay::OverlayHandle || i == Overlay::OverlayMenu ||
+                         i == Overlay::OverlayCursor) {
                     // Dusk's overlays move, so the position comes from the
                     // menu rather than a fixed corner.
                     int x = 0, y = 0;
@@ -548,6 +549,9 @@ public:
                     int h = (int)overlayTexture.height;
                     if (i == Overlay::OverlayHandle) {
                         menu.handleOrigin(m_LastDrawableWidth, m_LastDrawableHeight, w, h, &x, &y);
+                    }
+                    else if (i == Overlay::OverlayCursor) {
+                        menu.cursorOrigin(m_LastDrawableWidth, m_LastDrawableHeight, w, h, &x, &y);
                     }
                     else {
                         menu.menuOrigin(m_LastDrawableWidth, m_LastDrawableHeight, w, h, &x, &y);

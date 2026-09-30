@@ -46,6 +46,7 @@ Menu::Menu(OverlayManager* manager) :
     m_MenuOpen(false),
     m_Selected(0),
     m_HandleHot(false),
+    m_Engaged(false),
     m_HandleX(0.965f),
     m_HandleY(0.035f),
     m_Dragging(false),
@@ -171,6 +172,31 @@ void Menu::menuOrigin(int displayWidth, int displayHeight, int surfaceWidth,
                    0, SDL_max(0, displayHeight - surfaceHeight));
 }
 
+void Menu::cursorOrigin(int displayWidth, int displayHeight, int surfaceWidth,
+                        int surfaceHeight, int* x, int* y)
+{
+    // The synthetic cursor is in window coordinates; the renderer works in
+    // display pixels, and on a HiDPI screen those differ by the backing
+    // scale. Scaling here keeps the drawn pointer under the real one.
+    *x = SDL_clamp((int)((float)m_CursorX / SDL_max(1, m_WindowWidth) * displayWidth),
+                   0, SDL_max(0, displayWidth - surfaceWidth));
+    *y = SDL_clamp((int)((float)m_CursorY / SDL_max(1, m_WindowHeight) * displayHeight),
+                   0, SDL_max(0, displayHeight - surfaceHeight));
+}
+
+void Menu::setEngaged(bool engaged)
+{
+    if (m_Engaged == engaged) {
+        return;
+    }
+
+    m_Engaged = engaged;
+    m_Manager->setOverlayState(OverlayCursor, engaged);
+    if (engaged) {
+        repaintCursor();
+    }
+}
+
 bool Menu::pointInHandle(int x, int y) const
 {
     int hx = SDL_clamp((int)(m_HandleX * m_WindowWidth), 0, SDL_max(0, m_WindowWidth - HANDLE_SIZE));
@@ -218,6 +244,11 @@ void Menu::setMenuOpen(bool open)
     if (open) {
         repaintMenu();
     }
+
+    // Opening by hotkey engages too, otherwise the menu would appear with
+    // no pointer to click it with.
+    setEngaged(open || m_HandleHot);
+    repaintHandle();
 }
 
 void Menu::refresh()
@@ -327,6 +358,11 @@ bool Menu::handleMouseMotion(int x, int y, int xrel, int yrel, bool absolute)
         m_CursorX = SDL_clamp(m_CursorX + xrel, 0, m_WindowWidth - 1);
         m_CursorY = SDL_clamp(m_CursorY + yrel, 0, m_WindowHeight - 1);
     }
+
+    // Our own pointer is shown exactly while we are the ones consuming
+    // motion, so it appears the moment the host's cursor stops responding
+    // and vanishes again when control returns.
+    setEngaged(m_MenuOpen || m_Dragging || pointInHandle(m_CursorX, m_CursorY));
 
     if (m_Dragging) {
         int newX = m_CursorX - m_DragOffsetX;
@@ -484,6 +520,39 @@ void Menu::repaintHandle()
     }
 
     m_Manager->setOverlaySurface(OverlayHandle, surface);
+}
+
+void Menu::repaintCursor()
+{
+    // A classic arrow, built from one row-rect per scanline. Drawing it by
+    // hand rather than shipping an image keeps it in the same surface
+    // pipeline as everything else here, and it only has to read clearly
+    // against video.
+    const int w = 14;
+    const int h = 22;
+
+    SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32,
+                                                          SDL_PIXELFORMAT_ARGB8888);
+    if (surface == nullptr) {
+        return;
+    }
+
+    for (int row = 0; row < h; row++) {
+        // The arrow tapers to the tip, then the tail narrows again.
+        int width = (row < 16) ? (row / 2) + 1 : SDL_max(0, 8 - (row - 16));
+        if (width <= 0) {
+            continue;
+        }
+        width = SDL_min(width, w - 2);
+
+        // White fill with a dark outline either side, so it stays visible
+        // over both bright and dark frames.
+        drawRect(surface, 0, row, width + 2, 1, TEXT_DARK);
+        drawRect(surface, 1, row, width, 1, TEXT);
+    }
+    drawRect(surface, 0, h - 1, 10, 1, TEXT_DARK);
+
+    m_Manager->setOverlaySurface(OverlayCursor, surface);
 }
 
 void Menu::repaintMenu()
