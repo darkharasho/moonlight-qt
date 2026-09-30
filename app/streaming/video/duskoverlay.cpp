@@ -186,6 +186,13 @@ void Menu::cursorOrigin(int displayWidth, int displayHeight, int surfaceWidth,
 
 void Menu::setEngaged(bool engaged)
 {
+    // Only stand in for a cursor that is actually missing. When the system
+    // pointer is on screen -- windowed, or any time capture is off -- ours
+    // would just be a second, worse arrow sitting next to the real one.
+    if (engaged && SDL_ShowCursor(SDL_QUERY) == SDL_ENABLE) {
+        engaged = false;
+    }
+
     if (m_Engaged == engaged) {
         return;
     }
@@ -524,12 +531,33 @@ void Menu::repaintHandle()
 
 void Menu::repaintCursor()
 {
-    // A classic arrow, built from one row-rect per scanline. Drawing it by
-    // hand rather than shipping an image keeps it in the same surface
-    // pipeline as everything else here, and it only has to read clearly
-    // against video.
-    const int w = 14;
-    const int h = 22;
+    // Spelled out as a bitmap rather than computed from row widths: the
+    // arithmetic version produced a visible staircase, and a pointer is
+    // small enough that stating every pixel is both shorter to read and
+    // exactly what was intended. 'o' is the outline, 'X' the fill.
+    static const char* const ARROW[] = {
+        "o           ",
+        "oo          ",
+        "oXo         ",
+        "oXXo        ",
+        "oXXXo       ",
+        "oXXXXo      ",
+        "oXXXXXo     ",
+        "oXXXXXXo    ",
+        "oXXXXXXXo   ",
+        "oXXXXXXXXo  ",
+        "oXXXXXXXXXo ",
+        "oXXXXXXoooo ",
+        "oXXXoXXo    ",
+        "oXo  oXXo   ",
+        "oo   oXXo   ",
+        "o     oXXo  ",
+        "      oXXo  ",
+        "       oo   ",
+    };
+
+    const int h = (int)SDL_arraysize(ARROW);
+    const int w = (int)SDL_strlen(ARROW[0]);
 
     SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32,
                                                           SDL_PIXELFORMAT_ARGB8888);
@@ -538,19 +566,17 @@ void Menu::repaintCursor()
     }
 
     for (int row = 0; row < h; row++) {
-        // The arrow tapers to the tip, then the tail narrows again.
-        int width = (row < 16) ? (row / 2) + 1 : SDL_max(0, 8 - (row - 16));
-        if (width <= 0) {
-            continue;
+        for (int col = 0; col < w; col++) {
+            const char pixel = ARROW[row][col];
+            if (pixel == 'X') {
+                drawRect(surface, col, row, 1, 1, TEXT);
+            }
+            else if (pixel == 'o') {
+                // Outlined so it reads over bright and dark frames alike.
+                drawRect(surface, col, row, 1, 1, TEXT_DARK);
+            }
         }
-        width = SDL_min(width, w - 2);
-
-        // White fill with a dark outline either side, so it stays visible
-        // over both bright and dark frames.
-        drawRect(surface, 0, row, width + 2, 1, TEXT_DARK);
-        drawRect(surface, 1, row, width, 1, TEXT);
     }
-    drawRect(surface, 0, h - 1, 10, 1, TEXT_DARK);
 
     m_Manager->setOverlaySurface(OverlayCursor, surface);
 }
