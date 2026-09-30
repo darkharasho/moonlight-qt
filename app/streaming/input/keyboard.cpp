@@ -1,4 +1,5 @@
 #include "streaming/session.h"
+#include "streaming/video/duskoverlay.h"
 
 #include <Limelight.h>
 #include "SDL_compat.h"
@@ -55,6 +56,18 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
 
         // Force raise all keys just be safe across this full-screen/windowed
         // transition just in case key events get lost.
+        raiseAllKeys();
+        break;
+
+    case KeyComboToggleDuskMenu:
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Detected Dusk menu toggle combo");
+
+        Session::get()->getOverlayManager().getMenu().toggle();
+
+        // The combo itself is held with three modifiers down. Without this
+        // the host keeps them latched, because the key-ups are swallowed by
+        // the open menu and never forwarded.
         raiseAllKeys();
         break;
 
@@ -224,6 +237,14 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
                 return;
             }
         }
+    }
+
+    // An open Dusk menu owns the keyboard. This sits after the combo check
+    // so the toggle still closes it, and before everything below so no key
+    // reaches the host while the menu is up — otherwise arrow keys would be
+    // navigating the menu here and something over there at the same time.
+    if (Session::get()->getOverlayManager().getMenu().handleKeyEvent(event)) {
+        return;
     }
 
     // Set modifier flags

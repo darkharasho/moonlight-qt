@@ -120,6 +120,13 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
     m_SpecialKeyCombos[KeyComboPasteText].scanCode = SDL_SCANCODE_V;
     m_SpecialKeyCombos[KeyComboPasteText].enabled = true;
 
+    // Dusk's in-stream menu. M is unused upstream, so this does not collide
+    // with a shortcut anyone already has muscle memory for.
+    m_SpecialKeyCombos[KeyComboToggleDuskMenu].keyCombo = KeyComboToggleDuskMenu;
+    m_SpecialKeyCombos[KeyComboToggleDuskMenu].keyCode = SDLK_m;
+    m_SpecialKeyCombos[KeyComboToggleDuskMenu].scanCode = SDL_SCANCODE_M;
+    m_SpecialKeyCombos[KeyComboToggleDuskMenu].enabled = true;
+
     m_SpecialKeyCombos[KeyComboTogglePointerRegionLock].keyCombo = KeyComboTogglePointerRegionLock;
     m_SpecialKeyCombos[KeyComboTogglePointerRegionLock].keyCode = SDLK_l;
     m_SpecialKeyCombos[KeyComboTogglePointerRegionLock].scanCode = SDL_SCANCODE_L;

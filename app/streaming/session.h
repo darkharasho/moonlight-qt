@@ -96,6 +96,9 @@ class Session : public QObject
     friend class SdlInputHandler;
     friend class DeferredSessionCleanupTask;
     friend class AsyncConnectionStartThread;
+    // Dusk's in-stream menu drives the same session actions the keyboard
+    // shortcuts do, so it needs the same access SdlInputHandler has.
+    friend class Overlay::Menu;
 
 public:
     explicit Session(NvComputer* computer, NvApp& app, StreamingPreferences *preferences = nullptr);

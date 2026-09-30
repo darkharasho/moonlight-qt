@@ -10,8 +10,14 @@ namespace Overlay {
 enum OverlayType {
     OverlayDebug,
     OverlayStatusUpdate,
+    // Dusk's interactive menu. Unlike the two above it is not text: the
+    // surface is drawn by Overlay::Menu and handed over with
+    // setOverlaySurface(), so the font path is skipped entirely.
+    OverlayMenu,
     OverlayMax
 };
+
+class Menu;
 
 class IOverlayRenderer
 {
@@ -39,6 +45,15 @@ public:
 
     void setOverlayRenderer(IOverlayRenderer* renderer);
 
+    /// Hand the manager a surface drawn by someone else.
+    ///
+    /// Takes ownership. This is the non-text path: the caller has already
+    /// rendered pixels, so no font is involved and the text buffer is left
+    /// alone.
+    void setOverlaySurface(OverlayType type, SDL_Surface* surface);
+
+    Menu& getMenu();
+
 private:
     void notifyOverlayUpdated(OverlayType type);
     SDL_Surface* RenderTextOutlinedWrapped(TTF_Font* font, const char* text, SDL_Color textColor, SDL_Color outlineColor, int outlineWidth, int wrapWidth);
@@ -54,6 +69,7 @@ private:
     } m_Overlays[OverlayMax];
     IOverlayRenderer* m_Renderer;
     QByteArray m_FontData;
+    Menu* m_Menu;
 };
 
 }

@@ -1,11 +1,13 @@
 #include "overlaymanager.h"
+#include "duskoverlay.h"
 #include "path.h"
 
 using namespace Overlay;
 
 OverlayManager::OverlayManager() :
     m_Renderer(nullptr),
-    m_FontData(Path::readDataFile("ModeSeven.ttf"))
+    m_FontData(Path::readDataFile("ModeSeven.ttf")),
+    m_Menu(nullptr)
 {
     memset(m_Overlays, 0, sizeof(m_Overlays));
 
@@ -30,6 +32,8 @@ OverlayManager::OverlayManager() :
 
 OverlayManager::~OverlayManager()
 {
+    delete m_Menu;
+
     for (int i = 0; i < OverlayType::OverlayMax; i++) {
         if (m_Overlays[i].surface != nullptr) {
             SDL_FreeSurface(m_Overlays[i].surface);
@@ -116,9 +120,48 @@ void OverlayManager::setOverlayRenderer(IOverlayRenderer* renderer)
     m_Renderer = renderer;
 }
 
+Menu& OverlayManager::getMenu()
+{
+    // Built on first use rather than in the constructor: it loads a font,
+    // and a session that never opens the menu should not pay for one.
+    if (m_Menu == nullptr) {
+        m_Menu = new Menu(this);
+    }
+    return *m_Menu;
+}
+
+void OverlayManager::setOverlaySurface(OverlayType type, SDL_Surface* surface)
+{
+    SDL_Surface* oldSurface = (SDL_Surface*)SDL_AtomicSetPtr((void**)&m_Overlays[type].surface,
+                                                             surface);
+
+    if (m_Renderer != nullptr) {
+        m_Renderer->notifyOverlayUpdated(type);
+    }
+
+    if (oldSurface != nullptr) {
+        SDL_FreeSurface(oldSurface);
+    }
+}
+
 void OverlayManager::notifyOverlayUpdated(OverlayType type)
 {
     if (m_Renderer == nullptr) {
+        return;
+    }
+
+    // The menu draws its own pixels, so there is no text to render here.
+    // Enabling it is a no-op because Menu::repaint() supplies the surface;
+    // disabling it clears the surface so the renderer drops the texture.
+    if (type == OverlayMenu) {
+        if (!m_Overlays[type].enabled) {
+            SDL_Surface* oldSurface = (SDL_Surface*)SDL_AtomicSetPtr(
+                (void**)&m_Overlays[type].surface, nullptr);
+            if (oldSurface != nullptr) {
+                SDL_FreeSurface(oldSurface);
+            }
+        }
+        m_Renderer->notifyOverlayUpdated(type);
         return;
     }
 

@@ -538,6 +538,12 @@ public:
                     renderRect.x = 0;
                     renderRect.y = m_LastDrawableHeight - overlayTexture.height;
                 }
+                else if (i == Overlay::OverlayMenu) {
+                    // Centred: it is a menu someone is looking at, not a
+                    // status line they are ignoring.
+                    renderRect.x = (m_LastDrawableWidth - (int)overlayTexture.width) / 2;
+                    renderRect.y = (m_LastDrawableHeight - (int)overlayTexture.height) / 2;
+                }
 
                 renderRect.w = overlayTexture.width;
                 renderRect.h = overlayTexture.height;
