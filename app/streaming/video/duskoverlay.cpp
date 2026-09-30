@@ -7,15 +7,14 @@
 
 using namespace Overlay;
 
-// Panel geometry, in the overlay surface's own pixels.
-#define HANDLE_SIZE     56
-#define MENU_WIDTH      560
-#define MENU_PADDING    28
-#define TITLE_HEIGHT    64
-#define ROW_HEIGHT      52
-#define ROW_GAP         4
-#define FONT_SIZE       22
-#define TITLE_FONT_SIZE 28
+// Compact by design: this drops down over a game, so it should cover as
+// little of it as possible while staying clickable.
+#define HANDLE_SIZE     40
+#define MENU_WIDTH      248
+#define MENU_PAD        8
+#define ROW_HEIGHT      32
+#define FONT_SIZE       15
+#define TITLE_FONT_SIZE 15
 
 // Far enough that a click with a shaky hand is still a click.
 #define DRAG_THRESHOLD  4
@@ -24,37 +23,24 @@ using namespace Overlay;
 #define SETTINGS_KEY_Y "dusk/overlayhandley"
 
 // Dusk's accent, so the overlay reads as part of the same app as the grid.
-static const SDL_Color ACCENT     = {0xE8, 0xB3, 0x3A, 0xFF};
-static const SDL_Color PANEL_BG   = {0x14, 0x16, 0x1C, 0xEB};
-static const SDL_Color HANDLE_BG  = {0x14, 0x16, 0x1C, 0xC8};
-static const SDL_Color ROW_BG     = {0x1F, 0x22, 0x2B, 0xFF};
-static const SDL_Color TEXT       = {0xEC, 0xEC, 0xEF, 0xFF};
-static const SDL_Color TEXT_DIM   = {0x8A, 0x8F, 0x9A, 0xFF};
-static const SDL_Color TEXT_DARK  = {0x12, 0x11, 0x0C, 0xFF};
-
-const Menu::Item Menu::s_Items[] = {
-    { "Resume",            "Close this menu"          },
-    { "Performance stats", "Toggle the stats overlay" },
-    { "Toggle fullscreen", ""                         },
-    { "Disconnect",        "End the session"          },
-};
-
-const int Menu::s_ItemCount = SDL_arraysize(Menu::s_Items);
+static const SDL_Color ACCENT    = {0xE8, 0xB3, 0x3A, 0xFF};
+static const SDL_Color PANEL_BG  = {0x14, 0x16, 0x1C, 0xF0};
+static const SDL_Color HANDLE_BG = {0x14, 0x16, 0x1C, 0xC8};
+static const SDL_Color TEXT      = {0xEC, 0xEC, 0xEF, 0xFF};
+static const SDL_Color TEXT_DARK = {0x12, 0x11, 0x0C, 0xFF};
 
 Menu::Menu(OverlayManager* manager) :
     m_Manager(manager),
     m_MenuOpen(false),
     m_Selected(0),
     m_HandleHot(false),
-    m_Engaged(false),
-    m_HandleX(0.965f),
-    m_HandleY(0.035f),
+    m_RestoreCapture(false),
+    m_HandleX(0.975f),
+    m_HandleY(0.025f),
     m_Dragging(false),
     m_DragMoved(false),
     m_DragOffsetX(0),
     m_DragOffsetY(0),
-    m_CursorX(0),
-    m_CursorY(0),
     m_WindowWidth(1920),
     m_WindowHeight(1080),
     m_Font(nullptr),
@@ -100,11 +86,10 @@ void Menu::savePosition()
 
 void Menu::setWindowSize(int width, int height)
 {
-    if (width <= 0 || height <= 0) {
-        return;
+    if (width > 0 && height > 0) {
+        m_WindowWidth = width;
+        m_WindowHeight = height;
     }
-    m_WindowWidth = width;
-    m_WindowHeight = height;
 }
 
 bool Menu::openFont()
@@ -147,7 +132,7 @@ int Menu::menuWidth() const
 
 int Menu::menuHeight() const
 {
-    return TITLE_HEIGHT + (s_ItemCount * (ROW_HEIGHT + ROW_GAP)) + MENU_PADDING;
+    return (MENU_PAD * 2) + (ActionMax * ROW_HEIGHT);
 }
 
 void Menu::handleOrigin(int displayWidth, int displayHeight, int surfaceWidth,
@@ -160,48 +145,15 @@ void Menu::handleOrigin(int displayWidth, int displayHeight, int surfaceWidth,
 void Menu::menuOrigin(int displayWidth, int displayHeight, int surfaceWidth,
                       int surfaceHeight, int* x, int* y)
 {
-    // Anchored under the handle so the menu opens where the eye already is,
-    // then clamped so it never hangs off the edge when the handle is parked
-    // in a corner -- which is the common case.
+    // A dropdown: pinned under the handle and right-aligned with it, then
+    // clamped so a handle in a corner does not push the menu off-screen.
+    int handleW = (int)((float)HANDLE_SIZE / m_WindowWidth * displayWidth);
+    int handleH = (int)((float)HANDLE_SIZE / m_WindowHeight * displayHeight);
     int handleX, handleY;
-    handleOrigin(displayWidth, displayHeight, HANDLE_SIZE, HANDLE_SIZE, &handleX, &handleY);
+    handleOrigin(displayWidth, displayHeight, handleW, handleH, &handleX, &handleY);
 
-    *x = SDL_clamp(handleX + HANDLE_SIZE / 2 - surfaceWidth / 2,
-                   0, SDL_max(0, displayWidth - surfaceWidth));
-    *y = SDL_clamp(handleY + HANDLE_SIZE + 12,
-                   0, SDL_max(0, displayHeight - surfaceHeight));
-}
-
-void Menu::cursorOrigin(int displayWidth, int displayHeight, int surfaceWidth,
-                        int surfaceHeight, int* x, int* y)
-{
-    // The synthetic cursor is in window coordinates; the renderer works in
-    // display pixels, and on a HiDPI screen those differ by the backing
-    // scale. Scaling here keeps the drawn pointer under the real one.
-    *x = SDL_clamp((int)((float)m_CursorX / SDL_max(1, m_WindowWidth) * displayWidth),
-                   0, SDL_max(0, displayWidth - surfaceWidth));
-    *y = SDL_clamp((int)((float)m_CursorY / SDL_max(1, m_WindowHeight) * displayHeight),
-                   0, SDL_max(0, displayHeight - surfaceHeight));
-}
-
-void Menu::setEngaged(bool engaged)
-{
-    // Only stand in for a cursor that is actually missing. When the system
-    // pointer is on screen -- windowed, or any time capture is off -- ours
-    // would just be a second, worse arrow sitting next to the real one.
-    if (engaged && SDL_ShowCursor(SDL_QUERY) == SDL_ENABLE) {
-        engaged = false;
-    }
-
-    if (m_Engaged == engaged) {
-        return;
-    }
-
-    m_Engaged = engaged;
-    m_Manager->setOverlayState(OverlayCursor, engaged);
-    if (engaged) {
-        repaintCursor();
-    }
+    *x = SDL_clamp(handleX + handleW - surfaceWidth, 0, SDL_max(0, displayWidth - surfaceWidth));
+    *y = SDL_clamp(handleY + handleH + 6, 0, SDL_max(0, displayHeight - surfaceHeight));
 }
 
 bool Menu::pointInHandle(int x, int y) const
@@ -218,21 +170,37 @@ int Menu::itemAtPoint(int x, int y) const
                                         menuWidth(), menuHeight(), &mx, &my);
 
     int localX = x - mx;
-    int localY = y - my;
-    if (localX < MENU_PADDING || localX > menuWidth() - MENU_PADDING) {
+    int localY = y - my - MENU_PAD;
+    if (localX < 0 || localX >= menuWidth() || localY < 0) {
         return -1;
     }
 
-    for (int i = 0; i < s_ItemCount; i++) {
-        int rowTop = TITLE_HEIGHT + i * (ROW_HEIGHT + ROW_GAP);
-        if (localY >= rowTop && localY < rowTop + ROW_HEIGHT) {
-            return i;
-        }
-    }
-    return -1;
+    int index = localY / ROW_HEIGHT;
+    return index < ActionMax ? index : -1;
 }
 
 // ------------------------------------------------------------------- state
+
+void Menu::releaseCapture(bool release)
+{
+    Session* session = Session::s_ActiveSession;
+    if (session == nullptr || session->m_InputHandler == nullptr) {
+        return;
+    }
+
+    if (release) {
+        // Remember what we interrupted, so closing restores the user's
+        // state rather than assuming they were captured.
+        m_RestoreCapture = session->m_InputHandler->isCaptureActive();
+        if (m_RestoreCapture) {
+            session->m_InputHandler->setCaptureActive(false);
+        }
+    }
+    else if (m_RestoreCapture) {
+        m_RestoreCapture = false;
+        session->m_InputHandler->setCaptureActive(true);
+    }
+}
 
 void Menu::setMenuOpen(bool open)
 {
@@ -247,14 +215,14 @@ void Menu::setMenuOpen(bool open)
         m_Selected = 0;
     }
 
+    // Hand the real cursor back while the menu is up. This is the whole
+    // reason there is no cursor of our own to go wrong.
+    releaseCapture(open);
+
     m_Manager->setOverlayState(OverlayMenu, open);
     if (open) {
         repaintMenu();
     }
-
-    // Opening by hotkey engages too, otherwise the menu would appear with
-    // no pointer to click it with.
-    setEngaged(open || m_HandleHot);
     repaintHandle();
 }
 
@@ -267,16 +235,30 @@ void Menu::refresh()
     }
 }
 
+const char* Menu::labelFor(int index) const
+{
+    Session* session = Session::get();
+
+    switch (index) {
+    case ActionStats:
+        return (session != nullptr &&
+                session->getOverlayManager().isOverlayEnabled(OverlayDebug))
+                   ? "Hide performance stats"
+                   : "Show performance stats";
+    case ActionFullScreen:   return "Toggle full screen";
+    case ActionReleaseMouse: return "Release the mouse";
+    case ActionMinimize:     return "Minimise";
+    case ActionDisconnect:   return "Disconnect";
+    default:                 return "";
+    }
+}
+
 void Menu::activate(int index)
 {
     Session* session = Session::get();
 
     switch (index) {
-    case 0: // Resume
-        setMenuOpen(false);
-        break;
-
-    case 1: // Performance stats
+    case ActionStats:
         if (session != nullptr) {
             OverlayManager& overlays = session->getOverlayManager();
             overlays.setOverlayState(OverlayDebug, !overlays.isOverlayEnabled(OverlayDebug));
@@ -284,14 +266,33 @@ void Menu::activate(int index)
         setMenuOpen(false);
         break;
 
-    case 2: // Toggle fullscreen
+    case ActionFullScreen:
         setMenuOpen(false);
         if (Session::s_ActiveSession != nullptr) {
             Session::s_ActiveSession->toggleFullscreen();
         }
         break;
 
-    case 3: // Disconnect
+    case ActionReleaseMouse:
+        // Close first, then leave it released: the close would otherwise
+        // restore the capture we were just asked to drop.
+        setMenuOpen(false);
+        m_RestoreCapture = false;
+        if (Session::s_ActiveSession != nullptr &&
+            Session::s_ActiveSession->m_InputHandler != nullptr) {
+            Session::s_ActiveSession->m_InputHandler->setCaptureActive(false);
+        }
+        break;
+
+    case ActionMinimize:
+        setMenuOpen(false);
+        if (Session::s_ActiveSession != nullptr &&
+            Session::s_ActiveSession->m_Window != nullptr) {
+            SDL_MinimizeWindow(Session::s_ActiveSession->m_Window);
+        }
+        break;
+
+    case ActionDisconnect:
         setMenuOpen(false);
         {
             // Same path as the quit key combo, so there is one teardown.
@@ -325,13 +326,13 @@ bool Menu::handleKeyEvent(const SDL_KeyboardEvent* event)
     switch (event->keysym.sym) {
     case SDLK_UP:
     case SDLK_k:
-        m_Selected = (m_Selected + s_ItemCount - 1) % s_ItemCount;
+        m_Selected = (m_Selected + ActionMax - 1) % ActionMax;
         repaintMenu();
         break;
 
     case SDLK_DOWN:
     case SDLK_j:
-        m_Selected = (m_Selected + 1) % s_ItemCount;
+        m_Selected = (m_Selected + 1) % ActionMax;
         repaintMenu();
         break;
 
@@ -352,41 +353,28 @@ bool Menu::handleKeyEvent(const SDL_KeyboardEvent* event)
     return true;
 }
 
-bool Menu::handleMouseMotion(int x, int y, int xrel, int yrel, bool absolute)
+bool Menu::handleMouseMotion(int x, int y, bool usable)
 {
-    if (absolute) {
-        m_CursorX = x;
-        m_CursorY = y;
+    if (!usable) {
+        // Captured in relative mode: the coordinates are meaningless, so
+        // hovering is not a thing that can happen. Say so rather than
+        // hit-testing against a position that is not real.
+        return false;
     }
-    else {
-        // Integrate the deltas and clamp. The clamp is what keeps this
-        // usable: mid-screen the synthetic cursor drifts from the real one,
-        // but pushing into an edge pins both, which re-syncs them.
-        m_CursorX = SDL_clamp(m_CursorX + xrel, 0, m_WindowWidth - 1);
-        m_CursorY = SDL_clamp(m_CursorY + yrel, 0, m_WindowHeight - 1);
-    }
-
-    // Our own pointer is shown exactly while we are the ones consuming
-    // motion, so it appears the moment the host's cursor stops responding
-    // and vanishes again when control returns.
-    setEngaged(m_MenuOpen || m_Dragging || pointInHandle(m_CursorX, m_CursorY));
 
     if (m_Dragging) {
-        int newX = m_CursorX - m_DragOffsetX;
-        int newY = m_CursorY - m_DragOffsetY;
-
-        if (SDL_abs(xrel) + SDL_abs(yrel) > 0) {
-            m_DragMoved = true;
-        }
-
-        m_HandleX = SDL_clamp((float)newX / SDL_max(1, m_WindowWidth), 0.0f, 1.0f);
-        m_HandleY = SDL_clamp((float)newY / SDL_max(1, m_WindowHeight), 0.0f, 1.0f);
+        m_DragMoved = true;
+        m_HandleX = SDL_clamp((float)(x - m_DragOffsetX) / SDL_max(1, m_WindowWidth), 0.0f, 1.0f);
+        m_HandleY = SDL_clamp((float)(y - m_DragOffsetY) / SDL_max(1, m_WindowHeight), 0.0f, 1.0f);
         repaintHandle();
+        if (m_MenuOpen) {
+            repaintMenu();
+        }
         return true;
     }
 
     if (m_MenuOpen) {
-        int hovered = itemAtPoint(m_CursorX, m_CursorY);
+        int hovered = itemAtPoint(x, y);
         if (hovered >= 0 && hovered != m_Selected) {
             m_Selected = hovered;
             repaintMenu();
@@ -396,27 +384,25 @@ bool Menu::handleMouseMotion(int x, int y, int xrel, int yrel, bool absolute)
         return true;
     }
 
-    bool hot = pointInHandle(m_CursorX, m_CursorY);
+    bool hot = pointInHandle(x, y);
     if (hot != m_HandleHot) {
         m_HandleHot = hot;
         repaintHandle();
     }
 
-    // Motion outside the handle is the host's. Swallowing it would make the
-    // stream feel broken for the sake of a button nobody is touching.
+    // Motion elsewhere is the host's. Swallowing it would make the stream
+    // feel broken for the sake of a button nobody is touching.
     return hot;
 }
 
-bool Menu::handleMouseButton(int button, bool pressed, int x, int y, bool absolute)
+bool Menu::handleMouseButton(int button, bool pressed, int x, int y, bool usable)
 {
-    if (absolute) {
-        m_CursorX = x;
-        m_CursorY = y;
+    if (!usable) {
+        return false;
     }
 
     if (button != SDL_BUTTON_LEFT) {
-        // Right-click closes the menu; otherwise non-left buttons are the
-        // host's business.
+        // Right-click closes; other buttons are the host's business.
         if (m_MenuOpen && pressed) {
             setMenuOpen(false);
             return true;
@@ -425,20 +411,20 @@ bool Menu::handleMouseButton(int button, bool pressed, int x, int y, bool absolu
     }
 
     if (pressed) {
-        if (pointInHandle(m_CursorX, m_CursorY)) {
+        if (pointInHandle(x, y)) {
             int hx = SDL_clamp((int)(m_HandleX * m_WindowWidth), 0,
                                SDL_max(0, m_WindowWidth - HANDLE_SIZE));
             int hy = SDL_clamp((int)(m_HandleY * m_WindowHeight), 0,
                                SDL_max(0, m_WindowHeight - HANDLE_SIZE));
             m_Dragging = true;
             m_DragMoved = false;
-            m_DragOffsetX = m_CursorX - hx;
-            m_DragOffsetY = m_CursorY - hy;
+            m_DragOffsetX = x - hx;
+            m_DragOffsetY = y - hy;
             return true;
         }
 
         if (m_MenuOpen) {
-            int item = itemAtPoint(m_CursorX, m_CursorY);
+            int item = itemAtPoint(x, y);
             if (item >= 0) {
                 activate(item);
             }
@@ -454,8 +440,9 @@ bool Menu::handleMouseButton(int button, bool pressed, int x, int y, bool absolu
 
     // Released
     if (m_Dragging) {
+        bool moved = m_DragMoved;
         m_Dragging = false;
-        if (m_DragMoved) {
+        if (moved) {
             savePosition();
         }
         else {
@@ -500,10 +487,6 @@ void Menu::drawText(SDL_Surface* surface, TTF_Font* font, const char* text,
 
 void Menu::repaintHandle()
 {
-    if (!openFont()) {
-        return;
-    }
-
     SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, HANDLE_SIZE, HANDLE_SIZE, 32,
                                                           SDL_PIXELFORMAT_ARGB8888);
     if (surface == nullptr) {
@@ -514,7 +497,7 @@ void Menu::repaintHandle()
 
     drawRect(surface, 0, 0, HANDLE_SIZE, HANDLE_SIZE, lit ? ACCENT : HANDLE_BG);
     if (!lit) {
-        drawRect(surface, 0, 0, HANDLE_SIZE, 3, ACCENT);
+        drawRect(surface, 0, 0, HANDLE_SIZE, 2, ACCENT);
     }
 
     // Three bars: a menu affordance that needs no glyph coverage from the
@@ -523,62 +506,10 @@ void Menu::repaintHandle()
     const int barW = HANDLE_SIZE / 2;
     const int barX = (HANDLE_SIZE - barW) / 2;
     for (int i = 0; i < 3; i++) {
-        drawRect(surface, barX, 18 + (i * 8), barW, 3, bar);
+        drawRect(surface, barX, 13 + (i * 7), barW, 2, bar);
     }
 
     m_Manager->setOverlaySurface(OverlayHandle, surface);
-}
-
-void Menu::repaintCursor()
-{
-    // Spelled out as a bitmap rather than computed from row widths: the
-    // arithmetic version produced a visible staircase, and a pointer is
-    // small enough that stating every pixel is both shorter to read and
-    // exactly what was intended. 'o' is the outline, 'X' the fill.
-    static const char* const ARROW[] = {
-        "o           ",
-        "oo          ",
-        "oXo         ",
-        "oXXo        ",
-        "oXXXo       ",
-        "oXXXXo      ",
-        "oXXXXXo     ",
-        "oXXXXXXo    ",
-        "oXXXXXXXo   ",
-        "oXXXXXXXXo  ",
-        "oXXXXXXXXXo ",
-        "oXXXXXXoooo ",
-        "oXXXoXXo    ",
-        "oXo  oXXo   ",
-        "oo   oXXo   ",
-        "o     oXXo  ",
-        "      oXXo  ",
-        "       oo   ",
-    };
-
-    const int h = (int)SDL_arraysize(ARROW);
-    const int w = (int)SDL_strlen(ARROW[0]);
-
-    SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32,
-                                                          SDL_PIXELFORMAT_ARGB8888);
-    if (surface == nullptr) {
-        return;
-    }
-
-    for (int row = 0; row < h; row++) {
-        for (int col = 0; col < w; col++) {
-            const char pixel = ARROW[row][col];
-            if (pixel == 'X') {
-                drawRect(surface, col, row, 1, 1, TEXT);
-            }
-            else if (pixel == 'o') {
-                // Outlined so it reads over bright and dark frames alike.
-                drawRect(surface, col, row, 1, 1, TEXT_DARK);
-            }
-        }
-    }
-
-    m_Manager->setOverlaySurface(OverlayCursor, surface);
 }
 
 void Menu::repaintMenu()
@@ -598,24 +529,18 @@ void Menu::repaintMenu()
     // Partial alpha in the panel colour is what lets the stream show
     // through; the renderer blends the surface as a whole.
     drawRect(surface, 0, 0, menuWidth(), menuHeight(), PANEL_BG);
-    drawRect(surface, 0, 0, menuWidth(), 3, ACCENT);
+    drawRect(surface, 0, 0, menuWidth(), 2, ACCENT);
 
-    drawText(surface, m_TitleFont, "DUSK", MENU_PADDING, MENU_PADDING - 6, ACCENT);
-
-    for (int i = 0; i < s_ItemCount; i++) {
+    for (int i = 0; i < ActionMax; i++) {
         const bool selected = (i == m_Selected);
-        const int y = TITLE_HEIGHT + i * (ROW_HEIGHT + ROW_GAP);
+        const int y = MENU_PAD + (i * ROW_HEIGHT);
 
-        drawRect(surface, MENU_PADDING, y, menuWidth() - (MENU_PADDING * 2), ROW_HEIGHT,
-                 selected ? ACCENT : ROW_BG);
-
-        drawText(surface, m_Font, s_Items[i].label, MENU_PADDING + 16, y + 14,
-                 selected ? TEXT_DARK : TEXT);
-
-        if (!selected) {
-            drawText(surface, m_Font, s_Items[i].hint,
-                     menuWidth() - MENU_PADDING - 220, y + 14, TEXT_DIM);
+        if (selected) {
+            drawRect(surface, 0, y, menuWidth(), ROW_HEIGHT, ACCENT);
         }
+
+        drawText(surface, m_Font, labelFor(i), MENU_PAD + 6, y + 7,
+                 selected ? TEXT_DARK : TEXT);
     }
 
     m_Manager->setOverlaySurface(OverlayMenu, surface);

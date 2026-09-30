@@ -36,7 +36,15 @@ void SdlInputHandler::handleMouseButtonEvent(SDL_MouseButtonEvent* event)
         // Ignore synthetic mouse events
         return;
     }
-    else if (!isCaptureActive()) {
+
+    // Ahead of the capture check: with the menu open the mouse is
+    // deliberately released, and a click must drive the menu rather than
+    // re-capture for the host.
+    if (overlayTookMouseButton(event)) {
+        return;
+    }
+
+    if (!isCaptureActive()) {
         if (event->button == SDL_BUTTON_LEFT && event->state == SDL_RELEASED &&
                 isMouseInVideoRegion(event->x, event->y)) {
             // Capture the mouse again if clicked when unbound.
@@ -53,19 +61,6 @@ void SdlInputHandler::handleMouseButtonEvent(SDL_MouseButtonEvent* event)
     else if (m_AbsoluteMouseMode && !isMouseInVideoRegion(event->x, event->y) && event->state == SDL_PRESSED) {
         // Ignore button presses outside the video region, but allow button releases
         return;
-    }
-
-    // Dusk's overlay gets first refusal, so a click on the handle opens the
-    // menu instead of shooting something on the host.
-    {
-        int windowWidth, windowHeight;
-        SDL_GetWindowSize(m_Window, &windowWidth, &windowHeight);
-        Overlay::Menu& menu = Session::get()->getOverlayManager().getMenu();
-        menu.setWindowSize(windowWidth, windowHeight);
-        if (menu.handleMouseButton(event->button, event->state == SDL_PRESSED,
-                                   event->x, event->y, m_AbsoluteMouseMode)) {
-            return;
-        }
     }
 
     switch (event->button)
@@ -105,8 +100,45 @@ void SdlInputHandler::handleMouseButtonEvent(SDL_MouseButtonEvent* event)
                            button);
 }
 
+/// True when the pointer position means anything.
+///
+/// Captured in relative mode the cursor is locked, so the coordinates are
+/// whatever it was pinned to -- hit-testing them would fire at random.
+bool SdlInputHandler::overlayPointerUsable()
+{
+    return !isCaptureActive() || m_AbsoluteMouseMode;
+}
+
+bool SdlInputHandler::overlayTookMouseMotion(SDL_MouseMotionEvent* event)
+{
+    int windowWidth, windowHeight;
+    SDL_GetWindowSize(m_Window, &windowWidth, &windowHeight);
+
+    Overlay::Menu& menu = Session::get()->getOverlayManager().getMenu();
+    menu.setWindowSize(windowWidth, windowHeight);
+    return menu.handleMouseMotion(event->x, event->y, overlayPointerUsable());
+}
+
+bool SdlInputHandler::overlayTookMouseButton(SDL_MouseButtonEvent* event)
+{
+    int windowWidth, windowHeight;
+    SDL_GetWindowSize(m_Window, &windowWidth, &windowHeight);
+
+    Overlay::Menu& menu = Session::get()->getOverlayManager().getMenu();
+    menu.setWindowSize(windowWidth, windowHeight);
+    return menu.handleMouseButton(event->button, event->state == SDL_PRESSED,
+                                  event->x, event->y, overlayPointerUsable());
+}
+
 void SdlInputHandler::handleMouseMotionEvent(SDL_MouseMotionEvent* event)
 {
+    // Ahead of the capture check on purpose. The menu releases capture
+    // while it is open so the real cursor comes back, and it still has to
+    // receive the motion that drives it.
+    if (event->which != SDL_TOUCH_MOUSEID && overlayTookMouseMotion(event)) {
+        return;
+    }
+
     if (!isCaptureActive()) {
         // Not capturing
         return;
@@ -133,19 +165,6 @@ void SdlInputHandler::handleMouseMotionEvent(SDL_MouseMotionEvent* event)
 
     // We should not reference the original event anymore
     event = nullptr;
-
-    // Dusk's overlay gets first refusal. It only claims motion while the
-    // pointer is over the handle or the menu is open, so ordinary movement
-    // still reaches the host untouched.
-    {
-        int windowWidth, windowHeight;
-        SDL_GetWindowSize(m_Window, &windowWidth, &windowHeight);
-        Overlay::Menu& menu = Session::get()->getOverlayManager().getMenu();
-        menu.setWindowSize(windowWidth, windowHeight);
-        if (menu.handleMouseMotion(x, y, xrel, yrel, m_AbsoluteMouseMode)) {
-            return;
-        }
-    }
 
     if (m_AbsoluteMouseMode) {
         int windowWidth, windowHeight;

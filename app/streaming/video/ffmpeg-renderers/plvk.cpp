@@ -1039,8 +1039,7 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
                 overlayParts[i].dst.x0 = 0;
                 overlayParts[i].dst.y0 = 0;
             }
-            else if (i == Overlay::OverlayHandle || i == Overlay::OverlayMenu ||
-                     i == Overlay::OverlayCursor) {
+            else if (i == Overlay::OverlayHandle || i == Overlay::OverlayMenu) {
                 // Dusk's overlays move, so the position comes from the menu
                 // rather than a fixed corner.
                 int x = 0, y = 0;
@@ -1049,9 +1048,6 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
                 int h = (int)overlayParts[i].src.y1;
                 if (i == Overlay::OverlayHandle) {
                     menu.handleOrigin((int)targetFrame.crop.x1, (int)targetFrame.crop.y1, w, h, &x, &y);
-                }
-                else if (i == Overlay::OverlayCursor) {
-                    menu.cursorOrigin((int)targetFrame.crop.x1, (int)targetFrame.crop.y1, w, h, &x, &y);
                 }
                 else {
                     menu.menuOrigin((int)targetFrame.crop.x1, (int)targetFrame.crop.y1, w, h, &x, &y);

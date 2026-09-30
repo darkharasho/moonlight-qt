@@ -189,6 +189,11 @@ private:
 
     void performSpecialKeyCombo(KeyCombo combo);
 
+    // Dusk's overlay gets first refusal on pointer input.
+    bool overlayPointerUsable();
+    bool overlayTookMouseMotion(SDL_MouseMotionEvent* event);
+    bool overlayTookMouseButton(SDL_MouseButtonEvent* event);
+
     static
     Uint32 longPressTimerCallback(Uint32 interval, void* param);
 

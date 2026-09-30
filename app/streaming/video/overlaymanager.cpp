@@ -160,7 +160,7 @@ void OverlayManager::notifyOverlayUpdated(OverlayType type)
     // The menu draws its own pixels, so there is no text to render here.
     // Enabling it is a no-op because Menu::repaint() supplies the surface;
     // disabling it clears the surface so the renderer drops the texture.
-    if (type == OverlayMenu || type == OverlayHandle || type == OverlayCursor) {
+    if (type == OverlayMenu || type == OverlayHandle) {
         if (!m_Overlays[type].enabled) {
             SDL_Surface* oldSurface = (SDL_Surface*)SDL_AtomicSetPtr(
                 (void**)&m_Overlays[type].surface, nullptr);
