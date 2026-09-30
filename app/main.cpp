@@ -504,6 +504,12 @@ int main(int argc, char *argv[])
     }
 #endif
 
+    // Fingerprint the fork at startup. Dusk finds a Moonlight binary by
+    // searching the system, so "is this the build with the overlay in it?"
+    // is a real question when something does not appear -- and the answer
+    // should be in the log rather than inferred.
+    qInfo() << "Dusk fork: in-stream overlay menu available (Ctrl+Alt+Shift+M)";
+
 #if defined(Q_OS_WIN32)
     // Force AntiHooking.dll to be statically imported and loaded
     // by ntdll on Win32 platforms by calling a dummy function.
