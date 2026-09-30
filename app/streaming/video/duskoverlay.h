@@ -80,6 +80,7 @@ public:
 private:
     enum Action {
         ActionStats,
+        ActionSwitchDisplay,
         ActionFullScreen,
         ActionReleaseMouse,
         ActionMinimize,
@@ -87,15 +88,35 @@ private:
         ActionMax
     };
 
+    /// Sunshine exposes up to twelve outputs on Ctrl+Alt+Shift+F1..F12.
+    static const int k_DisplayCount = 8;
+
+    /// The menu has two pages: the actions, and the display picker. A
+    /// submenu rather than eight more rows, because the whole point of
+    /// this thing is to cover as little of the game as possible.
+    enum Page {
+        PageMain,
+        PageDisplays,
+    };
+
     void repaintHandle();
     void repaintMenu();
     void activate(int index);
     const char* labelFor(int index) const;
+    int rowCount() const;
+
+    /// Press a hotkey on the host.
+    ///
+    /// Sent rather than typed: Ctrl+Alt+Shift is also Moonlight's own
+    /// shortcut prefix, and on macOS the user would have to know that
+    /// Option stands in for Alt. Going through the protocol sidesteps both.
+    void sendHostHotkey(short keyCode);
+
+    void setEngaged(bool engaged);
 
     bool openFont();
     void loadPosition();
     void savePosition();
-    void releaseCapture(bool release);
 
     int menuWidth() const;
     int menuHeight() const;
@@ -108,8 +129,10 @@ private:
     OverlayManager* m_Manager;
 
     bool m_MenuOpen;
+    Page m_Page;
     int m_Selected;
     bool m_HandleHot;
+    bool m_Engaged;
 
     /// Whether capture was on before the menu took it, so closing restores
     /// what the user had rather than assuming.

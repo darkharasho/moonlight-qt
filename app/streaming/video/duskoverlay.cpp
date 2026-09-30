@@ -5,6 +5,8 @@
 
 #include <QSettings>
 
+#include <Limelight.h>
+
 using namespace Overlay;
 
 // Compact by design: this drops down over a game, so it should cover as
@@ -32,8 +34,10 @@ static const SDL_Color TEXT_DARK = {0x12, 0x11, 0x0C, 0xFF};
 Menu::Menu(OverlayManager* manager) :
     m_Manager(manager),
     m_MenuOpen(false),
+    m_Page(PageMain),
     m_Selected(0),
     m_HandleHot(false),
+    m_Engaged(false),
     m_RestoreCapture(false),
     m_HandleX(0.975f),
     m_HandleY(0.025f),
@@ -130,9 +134,15 @@ int Menu::menuWidth() const
     return MENU_WIDTH;
 }
 
+int Menu::rowCount() const
+{
+    // The display page carries a Back row on the end.
+    return m_Page == PageMain ? ActionMax : k_DisplayCount + 1;
+}
+
 int Menu::menuHeight() const
 {
-    return (MENU_PAD * 2) + (ActionMax * ROW_HEIGHT);
+    return (MENU_PAD * 2) + (rowCount() * ROW_HEIGHT);
 }
 
 void Menu::handleOrigin(int displayWidth, int displayHeight, int surfaceWidth,
@@ -176,21 +186,29 @@ int Menu::itemAtPoint(int x, int y) const
     }
 
     int index = localY / ROW_HEIGHT;
-    return index < ActionMax ? index : -1;
+    return index < rowCount() ? index : -1;
 }
 
 // ------------------------------------------------------------------- state
 
-void Menu::releaseCapture(bool release)
+void Menu::setEngaged(bool engaged)
 {
+    if (m_Engaged == engaged) {
+        return;
+    }
+
     Session* session = Session::s_ActiveSession;
     if (session == nullptr || session->m_InputHandler == nullptr) {
         return;
     }
 
-    if (release) {
-        // Remember what we interrupted, so closing restores the user's
-        // state rather than assuming they were captured.
+    m_Engaged = engaged;
+
+    if (engaged) {
+        // Releasing capture on hover, not just on open, is what puts the
+        // cursor back under the user's hand while they reach for the
+        // handle. Remember what we interrupted so we restore their state
+        // rather than assuming they were captured.
         m_RestoreCapture = session->m_InputHandler->isCaptureActive();
         if (m_RestoreCapture) {
             session->m_InputHandler->setCaptureActive(false);
@@ -200,6 +218,24 @@ void Menu::releaseCapture(bool release)
         m_RestoreCapture = false;
         session->m_InputHandler->setCaptureActive(true);
     }
+}
+
+void Menu::sendHostHotkey(short keyCode)
+{
+    // Modifiers are pressed as real keys as well as flagged: a host
+    // watching for a chord needs to see them held, not merely described.
+    const char mods = MODIFIER_CTRL | MODIFIER_ALT | MODIFIER_SHIFT;
+
+    LiSendKeyboardEvent(0xA2 /* VK_LCONTROL */, KEY_ACTION_DOWN, MODIFIER_CTRL);
+    LiSendKeyboardEvent(0xA4 /* VK_LMENU */, KEY_ACTION_DOWN, MODIFIER_CTRL | MODIFIER_ALT);
+    LiSendKeyboardEvent(0xA0 /* VK_LSHIFT */, KEY_ACTION_DOWN, mods);
+
+    LiSendKeyboardEvent(keyCode, KEY_ACTION_DOWN, mods);
+    LiSendKeyboardEvent(keyCode, KEY_ACTION_UP, mods);
+
+    LiSendKeyboardEvent(0xA0, KEY_ACTION_UP, MODIFIER_CTRL | MODIFIER_ALT);
+    LiSendKeyboardEvent(0xA4, KEY_ACTION_UP, MODIFIER_CTRL);
+    LiSendKeyboardEvent(0xA2, KEY_ACTION_UP, 0);
 }
 
 void Menu::setMenuOpen(bool open)
@@ -215,9 +251,13 @@ void Menu::setMenuOpen(bool open)
         m_Selected = 0;
     }
 
+    if (open) {
+        m_Page = PageMain;
+    }
+
     // Hand the real cursor back while the menu is up. This is the whole
     // reason there is no cursor of our own to go wrong.
-    releaseCapture(open);
+    setEngaged(open || m_HandleHot);
 
     m_Manager->setOverlayState(OverlayMenu, open);
     if (open) {
@@ -239,12 +279,22 @@ const char* Menu::labelFor(int index) const
 {
     Session* session = Session::get();
 
+    if (m_Page == PageDisplays) {
+        static char label[24];
+        if (index >= k_DisplayCount) {
+            return "Back";
+        }
+        SDL_snprintf(label, sizeof(label), "Display %d", index + 1);
+        return label;
+    }
+
     switch (index) {
     case ActionStats:
         return (session != nullptr &&
                 session->getOverlayManager().isOverlayEnabled(OverlayDebug))
                    ? "Hide performance stats"
                    : "Show performance stats";
+    case ActionSwitchDisplay: return "Switch display";
     case ActionFullScreen:   return "Toggle full screen";
     case ActionReleaseMouse: return "Release the mouse";
     case ActionMinimize:     return "Minimise";
@@ -257,6 +307,20 @@ void Menu::activate(int index)
 {
     Session* session = Session::get();
 
+    if (m_Page == PageDisplays) {
+        if (index >= k_DisplayCount) {
+            m_Page = PageMain;
+            m_Selected = ActionSwitchDisplay;
+            repaintMenu();
+            return;
+        }
+
+        // Sunshine listens for Ctrl+Alt+Shift+F1..F12 on the host.
+        sendHostHotkey(0x70 /* VK_F1 */ + index);
+        setMenuOpen(false);
+        return;
+    }
+
     switch (index) {
     case ActionStats:
         if (session != nullptr) {
@@ -264,6 +328,12 @@ void Menu::activate(int index)
             overlays.setOverlayState(OverlayDebug, !overlays.isOverlayEnabled(OverlayDebug));
         }
         setMenuOpen(false);
+        break;
+
+    case ActionSwitchDisplay:
+        m_Page = PageDisplays;
+        m_Selected = 0;
+        repaintMenu();
         break;
 
     case ActionFullScreen:
@@ -326,13 +396,13 @@ bool Menu::handleKeyEvent(const SDL_KeyboardEvent* event)
     switch (event->keysym.sym) {
     case SDLK_UP:
     case SDLK_k:
-        m_Selected = (m_Selected + ActionMax - 1) % ActionMax;
+        m_Selected = (m_Selected + rowCount() - 1) % rowCount();
         repaintMenu();
         break;
 
     case SDLK_DOWN:
     case SDLK_j:
-        m_Selected = (m_Selected + 1) % ActionMax;
+        m_Selected = (m_Selected + 1) % rowCount();
         repaintMenu();
         break;
 
@@ -343,7 +413,14 @@ bool Menu::handleKeyEvent(const SDL_KeyboardEvent* event)
         break;
 
     case SDLK_ESCAPE:
-        setMenuOpen(false);
+        if (m_Page == PageDisplays) {
+            m_Page = PageMain;
+            m_Selected = ActionSwitchDisplay;
+            repaintMenu();
+        }
+        else {
+            setMenuOpen(false);
+        }
         break;
 
     default:
@@ -387,6 +464,10 @@ bool Menu::handleMouseMotion(int x, int y, bool usable)
     bool hot = pointInHandle(x, y);
     if (hot != m_HandleHot) {
         m_HandleHot = hot;
+        // Engaging on hover is what brings the system cursor back while
+        // the user reaches for the handle; without it they are aiming at
+        // a button with nothing on screen to aim with.
+        setEngaged(hot || m_MenuOpen);
         repaintHandle();
     }
 
@@ -531,7 +612,7 @@ void Menu::repaintMenu()
     drawRect(surface, 0, 0, menuWidth(), menuHeight(), PANEL_BG);
     drawRect(surface, 0, 0, menuWidth(), 2, ACCENT);
 
-    for (int i = 0; i < ActionMax; i++) {
+    for (int i = 0; i < rowCount(); i++) {
         const bool selected = (i == m_Selected);
         const int y = MENU_PAD + (i * ROW_HEIGHT);
 
