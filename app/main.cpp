@@ -508,7 +508,7 @@ int main(int argc, char *argv[])
     // searching the system, so "is this the build with the overlay in it?"
     // is a real question when something does not appear -- and the answer
     // should be in the log rather than inferred.
-    qInfo() << "Dusk fork: in-stream overlay menu available (Ctrl+Alt+Shift+M)";
+    qInfo() << "Dusk fork: in-stream overlay menu available (Ctrl+Alt+Shift+O)";
 
 #if defined(Q_OS_WIN32)
     // Force AntiHooking.dll to be statically imported and loaded

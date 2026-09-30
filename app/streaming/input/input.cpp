@@ -120,11 +120,13 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
     m_SpecialKeyCombos[KeyComboPasteText].scanCode = SDL_SCANCODE_V;
     m_SpecialKeyCombos[KeyComboPasteText].enabled = true;
 
-    // Dusk's in-stream menu. M is unused upstream, so this does not collide
-    // with a shortcut anyone already has muscle memory for.
+    // Dusk's in-stream menu. O for overlay: M was the obvious choice and is
+    // already KeyComboToggleMouseMode, which sits earlier in the enum. The
+    // match loop returns on its first hit, so binding M here did not
+    // conflict loudly -- it silently toggled mouse mode instead, forever.
     m_SpecialKeyCombos[KeyComboToggleDuskMenu].keyCombo = KeyComboToggleDuskMenu;
-    m_SpecialKeyCombos[KeyComboToggleDuskMenu].keyCode = SDLK_m;
-    m_SpecialKeyCombos[KeyComboToggleDuskMenu].scanCode = SDL_SCANCODE_M;
+    m_SpecialKeyCombos[KeyComboToggleDuskMenu].keyCode = SDLK_o;
+    m_SpecialKeyCombos[KeyComboToggleDuskMenu].scanCode = SDL_SCANCODE_O;
     m_SpecialKeyCombos[KeyComboToggleDuskMenu].enabled = true;
 
     m_SpecialKeyCombos[KeyComboTogglePointerRegionLock].keyCombo = KeyComboTogglePointerRegionLock;
@@ -141,6 +143,29 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
     m_SpecialKeyCombos[KeyComboToggleKeyboardGrab].keyCode = SDLK_k;
     m_SpecialKeyCombos[KeyComboToggleKeyboardGrab].scanCode = SDL_SCANCODE_K;
     m_SpecialKeyCombos[KeyComboToggleKeyboardGrab].enabled = WMUtils::isRunningDesktopEnvironment();
+
+    // Two combos sharing a key is not a compile error and not a crash: the
+    // dispatch loop returns on its first match, so the later one simply
+    // never runs and the earlier one fires under a name nobody expected.
+    // That cost several rounds of "the overlay does not work" when M turned
+    // out to already be the mouse-mode toggle, so it is checked now.
+    for (int i = 0; i < KeyComboMax; i++) {
+        if (!m_SpecialKeyCombos[i].enabled) {
+            continue;
+        }
+        for (int j = i + 1; j < KeyComboMax; j++) {
+            if (!m_SpecialKeyCombos[j].enabled) {
+                continue;
+            }
+            if (m_SpecialKeyCombos[i].keyCode == m_SpecialKeyCombos[j].keyCode ||
+                m_SpecialKeyCombos[i].scanCode == m_SpecialKeyCombos[j].scanCode) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                             "Key combo %d and %d share a key; %d will never fire",
+                             i, j, j);
+                SDL_assert(false);
+            }
+        }
+    }
 
     m_OldIgnoreDevices = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES);
     m_OldIgnoreDevicesExcept = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT);
