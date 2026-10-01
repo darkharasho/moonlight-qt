@@ -251,8 +251,28 @@ void Menu::setEngaged(bool engaged)
         // handle. Remember what we interrupted so we restore their state
         // rather than assuming they were captured.
         m_RestoreCapture = session->m_InputHandler->isCaptureActive();
+
+        // A stream holding the mouse in relative mode has no pointer
+        // position, so nothing can be hovered and the hotkey is the only
+        // way in. Coming out of it the cursor reappears wherever it was
+        // parked before the stream started — which is why the handle could
+        // be seen and still not be clicked or dragged. Put the cursor on
+        // the handle instead, so one keypress hands the overlay to the
+        // mouse rather than making the whole thing keyboard-only.
+        bool relativeCapture = m_RestoreCapture
+                               && !session->m_InputHandler->overlayPointerUsable();
+
         if (m_RestoreCapture) {
             session->m_InputHandler->setCaptureActive(false);
+        }
+
+        if (relativeCapture) {
+            int hx, hy;
+            anchorIn(m_WindowWidth, m_WindowHeight, HANDLE_SIZE, HANDLE_SIZE, &hx, &hy);
+            session->m_InputHandler->warpCursorTo(hx + HANDLE_SIZE / 2,
+                                                  hy + HANDLE_SIZE / 2);
+            m_HandleHot = true;
+            repaintHandle();
         }
     }
     else if (m_RestoreCapture) {
