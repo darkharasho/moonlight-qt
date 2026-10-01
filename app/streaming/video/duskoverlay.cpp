@@ -41,6 +41,10 @@ Menu::Menu(OverlayManager* manager) :
     m_RestoreCapture(false),
     m_HandleX(0.975f),
     m_HandleY(0.025f),
+    m_VideoX0(0.0f),
+    m_VideoY0(0.0f),
+    m_VideoX1(1.0f),
+    m_VideoY1(1.0f),
     m_Dragging(false),
     m_DragMoved(false),
     m_DragOffsetX(0),
@@ -96,6 +100,41 @@ void Menu::setWindowSize(int width, int height)
     }
 }
 
+void Menu::setVideoRect(int x, int y, int w, int h, int surfaceWidth, int surfaceHeight)
+{
+    if (w <= 0 || h <= 0 || surfaceWidth <= 0 || surfaceHeight <= 0) {
+        return;
+    }
+
+    m_VideoX0 = SDL_clamp((float)x / surfaceWidth, 0.0f, 1.0f);
+    m_VideoY0 = SDL_clamp((float)y / surfaceHeight, 0.0f, 1.0f);
+    m_VideoX1 = SDL_clamp((float)(x + w) / surfaceWidth, m_VideoX0, 1.0f);
+    m_VideoY1 = SDL_clamp((float)(y + h) / surfaceHeight, m_VideoY0, 1.0f);
+}
+
+void Menu::videoIn(int spaceW, int spaceH, int* x0, int* y0, int* x1, int* y1) const
+{
+    *x0 = (int)(m_VideoX0 * spaceW);
+    *y0 = (int)(m_VideoY0 * spaceH);
+    *x1 = (int)(m_VideoX1 * spaceW);
+    *y1 = (int)(m_VideoY1 * spaceH);
+}
+
+void Menu::anchorIn(int spaceW, int spaceH, int itemW, int itemH, int* x, int* y) const
+{
+    // Anchored inside the video, not the window. When the host's aspect
+    // ratio does not match the window there are bars down the side, and
+    // while the stream holds the mouse the pointer cannot leave the video
+    // image — so a handle sitting in a bar is one the user can see and
+    // never reach. Hovering it is what frees the cursor, so being out
+    // there also locks itself out: the hotkey becomes the only way in.
+    int x0, y0, x1, y1;
+    videoIn(spaceW, spaceH, &x0, &y0, &x1, &y1);
+
+    *x = SDL_clamp(x0 + (int)(m_HandleX * (x1 - x0)), x0, SDL_max(x0, x1 - itemW));
+    *y = SDL_clamp(y0 + (int)(m_HandleY * (y1 - y0)), y0, SDL_max(y0, y1 - itemH));
+}
+
 bool Menu::openFont()
 {
     if (m_Font != nullptr && m_TitleFont != nullptr) {
@@ -148,8 +187,7 @@ int Menu::menuHeight() const
 void Menu::handleOrigin(int displayWidth, int displayHeight, int surfaceWidth,
                         int surfaceHeight, int* x, int* y)
 {
-    *x = SDL_clamp((int)(m_HandleX * displayWidth), 0, SDL_max(0, displayWidth - surfaceWidth));
-    *y = SDL_clamp((int)(m_HandleY * displayHeight), 0, SDL_max(0, displayHeight - surfaceHeight));
+    anchorIn(displayWidth, displayHeight, surfaceWidth, surfaceHeight, x, y);
 }
 
 void Menu::menuOrigin(int displayWidth, int displayHeight, int surfaceWidth,
@@ -162,14 +200,17 @@ void Menu::menuOrigin(int displayWidth, int displayHeight, int surfaceWidth,
     int handleX, handleY;
     handleOrigin(displayWidth, displayHeight, handleW, handleH, &handleX, &handleY);
 
-    *x = SDL_clamp(handleX + handleW - surfaceWidth, 0, SDL_max(0, displayWidth - surfaceWidth));
-    *y = SDL_clamp(handleY + handleH + 6, 0, SDL_max(0, displayHeight - surfaceHeight));
+    int x0, y0, x1, y1;
+    videoIn(displayWidth, displayHeight, &x0, &y0, &x1, &y1);
+
+    *x = SDL_clamp(handleX + handleW - surfaceWidth, x0, SDL_max(x0, x1 - surfaceWidth));
+    *y = SDL_clamp(handleY + handleH + 6, y0, SDL_max(y0, y1 - surfaceHeight));
 }
 
 bool Menu::pointInHandle(int x, int y) const
 {
-    int hx = SDL_clamp((int)(m_HandleX * m_WindowWidth), 0, SDL_max(0, m_WindowWidth - HANDLE_SIZE));
-    int hy = SDL_clamp((int)(m_HandleY * m_WindowHeight), 0, SDL_max(0, m_WindowHeight - HANDLE_SIZE));
+    int hx, hy;
+    anchorIn(m_WindowWidth, m_WindowHeight, HANDLE_SIZE, HANDLE_SIZE, &hx, &hy);
     return x >= hx && x < hx + HANDLE_SIZE && y >= hy && y < hy + HANDLE_SIZE;
 }
 
@@ -441,8 +482,10 @@ bool Menu::handleMouseMotion(int x, int y, bool usable)
 
     if (m_Dragging) {
         m_DragMoved = true;
-        m_HandleX = SDL_clamp((float)(x - m_DragOffsetX) / SDL_max(1, m_WindowWidth), 0.0f, 1.0f);
-        m_HandleY = SDL_clamp((float)(y - m_DragOffsetY) / SDL_max(1, m_WindowHeight), 0.0f, 1.0f);
+        int x0, y0, x1, y1;
+        videoIn(m_WindowWidth, m_WindowHeight, &x0, &y0, &x1, &y1);
+        m_HandleX = SDL_clamp((float)(x - m_DragOffsetX - x0) / SDL_max(1, x1 - x0), 0.0f, 1.0f);
+        m_HandleY = SDL_clamp((float)(y - m_DragOffsetY - y0) / SDL_max(1, y1 - y0), 0.0f, 1.0f);
         repaintHandle();
         if (m_MenuOpen) {
             repaintMenu();
@@ -493,10 +536,8 @@ bool Menu::handleMouseButton(int button, bool pressed, int x, int y, bool usable
 
     if (pressed) {
         if (pointInHandle(x, y)) {
-            int hx = SDL_clamp((int)(m_HandleX * m_WindowWidth), 0,
-                               SDL_max(0, m_WindowWidth - HANDLE_SIZE));
-            int hy = SDL_clamp((int)(m_HandleY * m_WindowHeight), 0,
-                               SDL_max(0, m_WindowHeight - HANDLE_SIZE));
+            int hx, hy;
+            anchorIn(m_WindowWidth, m_WindowHeight, HANDLE_SIZE, HANDLE_SIZE, &hx, &hy);
             m_Dragging = true;
             m_DragMoved = false;
             m_DragOffsetX = x - hx;
