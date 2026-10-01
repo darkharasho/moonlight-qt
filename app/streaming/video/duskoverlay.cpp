@@ -581,13 +581,64 @@ void Menu::repaintHandle()
         drawRect(surface, 0, 0, HANDLE_SIZE, 2, ACCENT);
     }
 
-    // Three bars: a menu affordance that needs no glyph coverage from the
-    // font and reads at any size.
-    const SDL_Color bar = lit ? TEXT_DARK : TEXT;
-    const int barW = HANDLE_SIZE / 2;
-    const int barX = (HANDLE_SIZE - barW) / 2;
-    for (int i = 0; i < 3; i++) {
-        drawRect(surface, barX, 13 + (i * 7), barW, 2, bar);
+    // Dusk's mark rather than a generic hamburger: a crescent with the sun
+    // in its curve. Same geometry as scripts/make_icon.py, in unit
+    // coordinates, so the button in-stream and the icon in the dock are
+    // demonstrably the same drawing.
+    const float inset = HANDLE_SIZE * 0.22f;
+    const float span = HANDLE_SIZE - (inset * 2.0f);
+    const SDL_Color moonInk = lit ? TEXT_DARK : TEXT;
+    const SDL_Color sunInk = lit ? TEXT_DARK : ACCENT;
+
+    struct Disc { float cx, cy, r; };
+    const Disc crescent = { 0.469f, 0.500f, 0.359f };
+    const Disc bite     = { 0.625f, 0.500f, 0.3125f };
+    const Disc sun      = { 0.625f, 0.500f, 0.164f };
+
+    auto inside = [&](const Disc& d, float x, float y) {
+        const float dx = x - (inset + d.cx * span);
+        const float dy = y - (inset + d.cy * span);
+        return (dx * dx + dy * dy) <= (d.r * span) * (d.r * span);
+    };
+
+    // Sampled 3x3 per pixel: at this size a hard edge on a circle is a
+    // staircase, and there is no antialiased fill to hand.
+    for (int py = 0; py < HANDLE_SIZE; py++) {
+        for (int px = 0; px < HANDLE_SIZE; px++) {
+            int moonHits = 0, sunHits = 0;
+            for (int sy = 0; sy < 3; sy++) {
+                for (int sx = 0; sx < 3; sx++) {
+                    const float x = px + (sx + 0.5f) / 3.0f;
+                    const float y = py + (sy + 0.5f) / 3.0f;
+                    if (inside(sun, x, y)) {
+                        sunHits++;
+                    }
+                    else if (inside(crescent, x, y) && !inside(bite, x, y)) {
+                        moonHits++;
+                    }
+                }
+            }
+
+            if (sunHits == 0 && moonHits == 0) {
+                continue;
+            }
+
+            const bool isSun = sunHits >= moonHits;
+            const SDL_Color ink = isSun ? sunInk : moonInk;
+            const float a = (isSun ? sunHits : moonHits) / 9.0f;
+
+            // Composited by hand against the known backdrop. SDL_FillRect
+            // replaces rather than blends, so writing partial alpha
+            // straight in would punch translucent notches along every
+            // curve instead of softening it.
+            const SDL_Color bg = lit ? ACCENT : HANDLE_BG;
+            SDL_Color out;
+            out.r = (Uint8)(ink.r * a + bg.r * (1.0f - a));
+            out.g = (Uint8)(ink.g * a + bg.g * (1.0f - a));
+            out.b = (Uint8)(ink.b * a + bg.b * (1.0f - a));
+            out.a = (Uint8)(255 * a + bg.a * (1.0f - a));
+            drawRect(surface, px, py, 1, 1, out);
+        }
     }
 
     m_Manager->setOverlaySurface(OverlayHandle, surface);
